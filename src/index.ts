@@ -10,9 +10,44 @@
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
+import { HelloCyclingApiRes } from '../types/hello-cycling';
+
+export interface Env {
+	DB: D1Database;
+}
+
+async function handleHelloCycling(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+	const latestRow = env.DB.prepare('SELECT * FROM hello_cycling_api_res ORDER BY fetched_at DESC LIMIT 1');
+	const latest = await latestRow.all();
+	// 1 minute cache
+	if (latest.results.length>0 && (latest.results[0]['fetched_at'] as number) > Date.now() - 60 * 1000) {
+		return Response.json({"stations": JSON.parse(latest.results[0]['data'] as string)});
+	} else {
+		const res = await fetch('https://www.hellocycling.jp/app/top/port_json?data=data', {
+			method: 'GET'
+		});
+		const data = await res.json() as Record<string, HelloCyclingApiRes>;
+		const filteredData = {
+			'sfc': [data['10992'], data['5143']],
+			'shonandai_west': [data['7395'], data['11403'], data['5609']],
+			'shonandai_east': [data['12189'], data['11908']]
+		};
+		// Save to database
+		const insert = env.DB.prepare('INSERT INTO hello_cycling_api_res (fetched_at, data) VALUES (?, ?)').bind(
+			Date.now(),
+			JSON.stringify(filteredData)
+		);
+		await insert.run();
+		return Response.json({ 'stations': filteredData });
+	}
+}
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
-		return new Response('Hello World!');
-	},
+		const { pathname } = new URL(request.url);
+		if (pathname === '/api/hello-cycling') {
+			return await handleHelloCycling(request, env, ctx);
+		}
+		return new Response('Not Found', { status: 404 });
+	}
 } satisfies ExportedHandler<Env>;
