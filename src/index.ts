@@ -12,11 +12,8 @@
  */
 import { HelloCyclingApiRes } from '../types/hello-cycling';
 
-export interface Env {
-	DB: D1Database;
-}
 
-async function handleHelloCycling(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+async function handleHelloCycling(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
 	const latestRow = env.DB.prepare('SELECT * FROM hello_cycling_api_res ORDER BY fetched_at DESC LIMIT 1');
 	const latest = await latestRow.all();
 	// 1 minute cache
