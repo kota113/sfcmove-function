@@ -16,8 +16,8 @@ import { HelloCyclingApiRes } from '../types/hello-cycling';
 async function handleHelloCycling(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
 	const latestRow = env.DB.prepare('SELECT * FROM hello_cycling_api_res ORDER BY fetched_at DESC LIMIT 1');
 	const latest = await latestRow.all();
-	// 1 minute cache
-	if (latest.results.length>0 && (latest.results[0]['fetched_at'] as number) > Date.now() - 60 * 1000) {
+	// 2 minutes cache
+	if (latest.results.length>0 && (latest.results[0]['fetched_at'] as number) > Date.now() - 2 * 60 * 1000) {
 		return Response.json({"stations": JSON.parse(latest.results[0]['data'] as string)});
 	} else {
 		const res = await fetch('https://www.hellocycling.jp/app/top/port_json?data=data', {
@@ -35,7 +35,7 @@ async function handleHelloCycling(_request: Request, env: Env, _ctx: ExecutionCo
 			JSON.stringify(filteredData)
 		);
 		await insert.run();
-		return Response.json({ 'stations': filteredData });
+		return Response.json({ 'stations': filteredData, 'lastFetched': latest.results[0]['fetched_at'] });
 	}
 }
 
