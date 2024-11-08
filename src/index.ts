@@ -25,7 +25,7 @@ async function handleHelloCycling(_request: Request, env: Env, _ctx: ExecutionCo
 		});
 		const data = await res.json() as Record<string, HelloCyclingApiRes>;
 		const filteredData = {
-			'sfc': [data['10992']],
+			'sfc': [data['5143']],
 			'shonandai_west': [data['7395'], data['11403'], data['5609']],
 			'shonandai_east': [data['12189'], data['11908']]
 		};
