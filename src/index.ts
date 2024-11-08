@@ -35,7 +35,7 @@ async function handleHelloCycling(_request: Request, env: Env, _ctx: ExecutionCo
 			JSON.stringify(filteredData)
 		);
 		await insert.run();
-		return Response.json({ 'stations': filteredData, 'lastFetched': latest.results[0]['fetched_at'] });
+		return Response.json({ 'stations': filteredData, 'lastUpdatedAt': latest.results[0]['fetched_at'] });
 	}
 }
 
