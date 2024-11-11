@@ -10,33 +10,27 @@
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
-import { HelloCyclingApiRes } from '../types/hello-cycling';
+import { GbfsApiResponse, Station } from '../types/gbfs';
 
 
 async function handleHelloCycling(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-	const latestRow = env.DB.prepare('SELECT * FROM hello_cycling_api_res ORDER BY fetched_at DESC LIMIT 1');
-	const latest = await latestRow.all();
-	// 1 minute cache
-	if (latest.results.length>0 && (latest.results[0]['fetched_at'] as number) > Date.now() - 60 * 1000) {
-		return Response.json({"stations": JSON.parse(latest.results[0]['data'] as string)});
-	} else {
-		const res = await fetch('https://www.hellocycling.jp/app/top/port_json?data=data', {
-			method: 'GET'
-		});
-		const data = await res.json() as Record<string, HelloCyclingApiRes>;
-		const filteredData = {
-			'sfc': [data['5143']],
-			'shonandai_west': [data['7395'], data['11403'], data['5609']],
-			'shonandai_east': [data['12189'], data['11908']]
-		};
-		// Save to database
-		const insert = env.DB.prepare('INSERT INTO hello_cycling_api_res (fetched_at, data) VALUES (?, ?)').bind(
-			Date.now(),
-			JSON.stringify(filteredData)
-		);
-		await insert.run();
-		return Response.json({ 'stations': filteredData, 'lastUpdatedAt': latest.results[0]['fetched_at'] });
-	}
+	const res = await fetch('https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_status.json', {
+		method: 'GET'
+	});
+	const data = await res.json() as GbfsApiResponse;
+	const stations = data.data.stations;
+	const filteredStations = stations.reduce((acc, station) => {
+		if (['5143', '7395', '11403', '5609', '12189', '11908'].includes(station.station_id)) {
+			acc[station.station_id] = station;
+		}
+		return acc;
+	}, {} as Record<string, Station>);
+	const filteredData = {
+		'sfc': [filteredStations['5143']],
+		'shonandai_west': [filteredStations['7395'], filteredStations['11403'], filteredStations['5609']],
+		'shonandai_east': [filteredStations['12189'], filteredStations['11908']]
+	};
+	return Response.json({ 'stations': filteredData, 'lastUpdatedAt': data.last_updated });
 }
 
 export default {
