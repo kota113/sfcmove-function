@@ -10,28 +10,63 @@
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
-import { GbfsApiResponse, Station } from '../types/gbfs';
+import { StationInfo, StationInformation, StationStatus } from '../types/gbfs';
+import { StationItem } from '../types/apiRes';
 
 
-async function handleHelloCycling(_request: Request, env: Env, _ctx: ExecutionContext): Promise<Response> {
-	const res = await fetch('https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_status.json', {
-		method: 'GET'
-	});
-	const data = await res.json() as GbfsApiResponse;
-	const stations = data.data.stations;
-	const filteredStations = stations.reduce((acc, station) => {
-		if (['5143', '7395', '11403', '5609', '12189', '11908'].includes(station.station_id)) {
-			acc[station.station_id] = station;
+async function handleHelloCycling(_request: Request, _env: Env, _ctx: ExecutionContext): Promise<Response> {
+	const stationIds = ['5143', '7395', '11403', '5609', '12189', '11908'];
+	const stationIdsSet = new Set(stationIds);
+
+	// Fetch both resources in parallel
+	const [stationInfoRes, stationStatusRes] = await Promise.all([
+		fetch('https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_information.json'),
+		fetch('https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_status.json')
+	]);
+
+	// Parse JSON responses in parallel
+	// noinspection ES6MissingAwait
+	const [stationInfoData, stationStatusData] = await Promise.all([
+		stationInfoRes.json() as Promise<StationInformation>,
+		stationStatusRes.json() as Promise<StationStatus>
+	]);
+
+	// Create a map of station_id to StationInfo
+	const stationInfoMap = new Map<string, StationInfo>();
+	for (const station of stationInfoData.data.stations) {
+		if (stationIdsSet.has(station.station_id)) {
+			stationInfoMap.set(station.station_id, station);
 		}
-		return acc;
-	}, {} as Record<string, Station>);
+	}
+
+	// Create a map of station_id to StationStatus with name added
+	const filteredStationStatus: Record<string, StationItem> = {};
+	for (const station of stationStatusData.data.stations) {
+		if (stationIdsSet.has(station.station_id)) {
+			const stationInfo = stationInfoMap.get(station.station_id);
+			if (stationInfo) {
+				filteredStationStatus[station.station_id] = { ...station, name: stationInfo.name };
+			}
+		}
+	}
+
+	// Group stations into categories
 	const filteredData = {
-		'sfc': [filteredStations['5143']],
-		'shonandai_west': [filteredStations['7395'], filteredStations['11403'], filteredStations['5609']],
-		'shonandai_east': [filteredStations['12189'], filteredStations['11908']]
+		'sfc': [filteredStationStatus['5143']],
+		'shonandai_west': [
+			filteredStationStatus['7395'],
+			filteredStationStatus['11403'],
+			filteredStationStatus['5609']
+		],
+		'shonandai_east': [
+			filteredStationStatus['12189'],
+			filteredStationStatus['11908']
+		]
 	};
-	return Response.json({ 'stations': filteredData, 'lastUpdatedAt': data.last_updated });
+
+	return Response.json({ 'stations': filteredData, 'lastUpdatedAt': stationStatusData.last_updated });
 }
+
 
 export default {
 	async fetch(request, env, ctx): Promise<Response> {

@@ -1,3 +1,50 @@
+export interface StationInformation {
+	last_updated: number;
+	ttl: number;
+	version: string;
+	data: {
+		stations: StationInfo[];
+	};
+}
+
+export interface StationInfo {
+	station_id: string;
+	name: string;
+	short_name?: string;
+	lat: number;
+	lon: number;
+	address?: string;
+	cross_street?: string;
+	region_id?: string;
+	post_code?: string;
+	rental_methods?: string[];
+	is_virtual_station?: boolean;
+	station_area?: GeoJSONMultiPolygon;
+	parking_type?: ParkingType;
+	parking_hoop?: boolean;
+	contact_phone?: string;
+	capacity?: number;
+	vehicle_capacity?: Record<string, number>;
+	vehicle_type_capacity?: Record<string, number>;
+	is_valet_station?: boolean;
+	is_charging_station?: boolean;
+	rental_uris?: RentalUris;
+}
+
+type ParkingType = "parking_lot" | "street_parking" | "underground_parking" | "sidewalk_parking" | "other";
+
+interface GeoJSONMultiPolygon {
+	type: "MultiPolygon";
+	coordinates: number[][][][];
+}
+
+interface RentalUris {
+	android?: string;
+	ios?: string;
+	web?: string;
+}
+
+
 export interface Station {
 	station_id: string;
 	num_bikes_available: number;
@@ -22,7 +69,7 @@ interface VehicleDockAvailability {
 	count: number;
 }
 
-export interface GbfsApiResponse {
+export interface StationStatus {
 	last_updated: number;
 	ttl: number;
 	version: string;
