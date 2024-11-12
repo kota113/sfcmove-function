@@ -43,6 +43,9 @@ async function handleHelloCycling(_request: Request, _env: Env, _ctx: ExecutionC
 	const filteredStationStatus: Record<string, StationItem> = {};
 	for (const station of stationStatusData.data.stations) {
 		if (stationIdsSet.has(station.station_id)) {
+			// ensure num_docks_available and num_bikes_available are not negative
+			if (station.num_docks_available !== undefined) station.num_docks_available = Math.max(0, station.num_docks_available || 0);
+			station.num_bikes_available = Math.max(0, station.num_bikes_available);
 			const stationInfo = stationInfoMap.get(station.station_id);
 			if (stationInfo) {
 				filteredStationStatus[station.station_id] = { ...station, name: stationInfo.name };
