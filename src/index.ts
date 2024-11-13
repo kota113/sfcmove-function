@@ -11,10 +11,25 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 import { StationInfo, StationInformation, StationStatus } from '../types/gbfs';
-import { StationItem } from '../types/apiRes';
+import { ApiResponse, StationItem } from '../types/apiRes';
 
 
-async function handleHelloCycling(_request: Request, _env: Env, _ctx: ExecutionContext): Promise<Response> {
+async function handleHelloCycling(request: Request, _env: Env, _ctx: ExecutionContext): Promise<Response> {
+	const cache = caches.default;
+	const url = new URL(request.url);
+	const cacheKey = new Request(url.toString(), request);
+	const cachedResponse = await cache.match(cacheKey);
+
+	if (cachedResponse) {
+		const cachedData: ApiResponse = await cachedResponse.json();
+		const currentTime = Date.now() / 1000; // current time in seconds
+		const cacheExpiryTime = cachedData.lastUpdatedAt + cachedData.ttl;
+
+		if (currentTime < cacheExpiryTime) {
+			return cachedResponse;
+		}
+	}
+
 	const stationIds = ['5143', '7395', '11403', '5609', '12189', '11908'];
 	const stationIdsSet = new Set(stationIds);
 
@@ -67,7 +82,17 @@ async function handleHelloCycling(_request: Request, _env: Env, _ctx: ExecutionC
 		]
 	};
 
-	return Response.json({ 'stations': filteredData, 'lastUpdatedAt': stationStatusData.last_updated });
+	const response = new Response(JSON.stringify({
+		'stations': filteredData,
+		'lastUpdatedAt': Math.max(stationInfoData.last_updated, stationStatusData.last_updated),
+		'ttl': Math.min(stationStatusData.ttl, stationInfoData.ttl)
+	} as ApiResponse), {
+		headers: { 'Content-Type': 'application/json' }
+	});
+
+	_ctx.waitUntil(cache.put(cacheKey, response.clone()));
+
+	return response;
 }
 
 
