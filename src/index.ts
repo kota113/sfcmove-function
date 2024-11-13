@@ -13,21 +13,17 @@
 import { StationInfo, StationInformation, StationStatus } from '../types/gbfs';
 import { ApiResponse, StationItem } from '../types/apiRes';
 
-
-async function handleHelloCycling(request: Request, _env: Env, _ctx: ExecutionContext): Promise<Response> {
+async function handleHelloCycling(
+	request: Request,
+	_env: Env,
+	_ctx: ExecutionContext
+): Promise<Response> {
 	const cache = caches.default;
-	const url = new URL(request.url);
-	const cacheKey = new Request(url.toString(), request);
+	const cacheKey = request;
 	const cachedResponse = await cache.match(cacheKey);
 
 	if (cachedResponse) {
-		const cachedData: ApiResponse = await cachedResponse.json();
-		const currentTime = Date.now() / 1000; // current time in seconds
-		const cacheExpiryTime = cachedData.lastUpdatedAt + cachedData.ttl;
-
-		if (currentTime < cacheExpiryTime) {
-			return cachedResponse;
-		}
+		return cachedResponse;
 	}
 
 	const stationIds = ['5143', '7395', '11403', '5609', '12189', '11908'];
@@ -35,15 +31,23 @@ async function handleHelloCycling(request: Request, _env: Env, _ctx: ExecutionCo
 
 	// Fetch both resources in parallel
 	const [stationInfoRes, stationStatusRes] = await Promise.all([
-		fetch('https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_information.json'),
-		fetch('https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_status.json')
+		fetch(
+			'https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_information.json'
+		),
+		fetch(
+			'https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_status.json'
+		),
 	]);
+
+	if (!stationInfoRes.ok || !stationStatusRes.ok) {
+		return new Response('Failed to fetch data from origin', { status: 502 });
+	}
 
 	// Parse JSON responses in parallel
 	// noinspection ES6MissingAwait
 	const [stationInfoData, stationStatusData] = await Promise.all([
 		stationInfoRes.json() as Promise<StationInformation>,
-		stationStatusRes.json() as Promise<StationStatus>
+		stationStatusRes.json() as Promise<StationStatus>,
 	]);
 
 	// Create a map of station_id to StationInfo
@@ -54,40 +58,53 @@ async function handleHelloCycling(request: Request, _env: Env, _ctx: ExecutionCo
 		}
 	}
 
-	// Create a map of station_id to StationStatus with name added
+	// Filter and process station statuses
 	const filteredStationStatus: Record<string, StationItem> = {};
 	for (const station of stationStatusData.data.stations) {
 		if (stationIdsSet.has(station.station_id)) {
-			// ensure num_docks_available and num_bikes_available are not negative
-			if (station.num_docks_available !== undefined) station.num_docks_available = Math.max(0, station.num_docks_available || 0);
-			station.num_bikes_available = Math.max(0, station.num_bikes_available);
 			const stationInfo = stationInfoMap.get(station.station_id);
 			if (stationInfo) {
-				filteredStationStatus[station.station_id] = { ...station, name: stationInfo.name };
+				filteredStationStatus[station.station_id] = {
+					...station,
+					name: stationInfo.name,
+					num_docks_available: Math.max(0, station.num_docks_available || 0),
+					num_bikes_available: Math.max(0, station.num_bikes_available || 0),
+				};
 			}
 		}
 	}
 
 	// Group stations into categories
 	const filteredData = {
-		'sfc': [filteredStationStatus['5143']],
-		'shonandai_west': [
+		sfc: [filteredStationStatus['5143']],
+		shonandai_west: [
 			filteredStationStatus['7395'],
 			filteredStationStatus['11403'],
-			filteredStationStatus['5609']
+			filteredStationStatus['5609'],
 		],
-		'shonandai_east': [
+		shonandai_east: [
 			filteredStationStatus['12189'],
-			filteredStationStatus['11908']
-		]
+			filteredStationStatus['11908'],
+		],
 	};
 
-	const response = new Response(JSON.stringify({
-		'stations': filteredData,
-		'lastUpdatedAt': Math.max(stationInfoData.last_updated, stationStatusData.last_updated),
-		'ttl': Math.min(stationStatusData.ttl, stationInfoData.ttl)
-	} as ApiResponse), {
-		headers: { 'Content-Type': 'application/json' }
+	const lastUpdatedAt = Math.max(
+		stationInfoData.last_updated,
+		stationStatusData.last_updated
+	);
+	const ttl = Math.min(stationStatusData.ttl, stationInfoData.ttl);
+
+	const responseData: ApiResponse = {
+		stations: filteredData,
+		lastUpdatedAt,
+		ttl,
+	};
+
+	const response = new Response(JSON.stringify(responseData), {
+		headers: {
+			'Content-Type': 'application/json',
+			'Cache-Control': `max-age=${ttl}`,
+		},
 	});
 
 	_ctx.waitUntil(cache.put(cacheKey, response.clone()));
@@ -95,13 +112,12 @@ async function handleHelloCycling(request: Request, _env: Env, _ctx: ExecutionCo
 	return response;
 }
 
-
 export default {
 	async fetch(request, env, ctx): Promise<Response> {
 		const { pathname } = new URL(request.url);
 		if (pathname === '/api/hello-cycling') {
-			return await handleHelloCycling(request, env, ctx);
+			return handleHelloCycling(request, env, ctx);
 		}
 		return new Response('Not Found', { status: 404 });
-	}
+	},
 } satisfies ExportedHandler<Env>;
