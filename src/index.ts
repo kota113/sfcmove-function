@@ -21,14 +21,17 @@ function convertHelloCyclingToGBFS(
 async function handleHelloCycling(
 	request: Request,
 	_env: Env,
-	_ctx: ExecutionContext
+	ctx: ExecutionContext
 ): Promise<Response> {
 	const cache = caches.default;
 	const cacheKey = request;
 	const cachedResponse = await cache.match(cacheKey);
 
 	if (cachedResponse) {
-		return cachedResponse;
+		// Create a response for the client with 'Cache-Control: no-cache'
+		const clientResponse = new Response(cachedResponse.body, cachedResponse);
+		clientResponse.headers.set('Cache-Control', 'no-cache');
+		return clientResponse;
 	}
 
 	let data: Record<string, HelloCyclingApiStationItem>;
@@ -62,16 +65,22 @@ async function handleHelloCycling(
 		ttl,
 	};
 
-	const response = new Response(JSON.stringify(responseData), {
+	// Create the response to be cached by the CDN
+	const cacheResponse = new Response(JSON.stringify(responseData), {
 		headers: {
 			'Content-Type': 'application/json',
-			'Cache-Control': `s-maxage=${ttl}, max-age=0`,
+			'Cache-Control': `public, s-maxage=${ttl}`,
 		},
 	});
 
-	_ctx.waitUntil(cache.put(cacheKey, response.clone()));
+	// Store the response in the CDN cache
+	ctx.waitUntil(cache.put(cacheKey, cacheResponse.clone()));
 
-	return response;
+	// Create the response to be sent to the client with 'Cache-Control: no-cache'
+	const clientResponse = new Response(cacheResponse.body, cacheResponse);
+	clientResponse.headers.set('Cache-Control', 'no-cache');
+
+	return clientResponse;
 }
 
 export default {
