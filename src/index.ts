@@ -1,19 +1,11 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Bind resources to your worker in `wrangler.toml`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
+// index.ts
 import { ApiResponse, StationItem } from '../types/apiRes';
 import { HelloCyclingApiStationItem } from '../types/hello-cycling';
 
-async function convertHelloCyclingToGBFS(data: HelloCyclingApiStationItem): Promise<StationItem> {
+function convertHelloCyclingToGBFS(
+	data: HelloCyclingApiStationItem,
+	lastUpdatedAt: number
+): StationItem {
 	return {
 		name: data.name,
 		station_id: data.id,
@@ -22,7 +14,7 @@ async function convertHelloCyclingToGBFS(data: HelloCyclingApiStationItem): Prom
 		is_installed: data.isopen,
 		is_renting: data.isopen,
 		is_returning: data.isopen,
-		last_reported: Date.now()/1000,
+		last_reported: lastUpdatedAt,
 	};
 }
 
@@ -39,23 +31,33 @@ async function handleHelloCycling(
 		return cachedResponse;
 	}
 
-	const res = await fetch('https://www.hellocycling.jp/app/top/port_json?data=data', {
-		method: 'GET'
-	});
-	const data = await res.json() as Record<string, HelloCyclingApiStationItem>;
-	const filteredData = {
-		'sfc': await Promise.all([data['5143']].map(convertHelloCyclingToGBFS)),
-		'shonandai_west': await Promise.all([data['7395'], data['11403'], data['5609']].map(convertHelloCyclingToGBFS)),
-		'shonandai_east': await Promise.all([data['12189'], data['11908']].map(convertHelloCyclingToGBFS))
+	let data: Record<string, HelloCyclingApiStationItem>;
+
+	try {
+		const res = await fetch('https://www.hellocycling.jp/app/top/port_json?data=data');
+		data = (await res.json()) as Record<string, HelloCyclingApiStationItem>;
+	} catch (error) {
+		return new Response('Failed to fetch data', { status: 500 });
+	}
+
+	const stationIds = {
+		sfc: ['5143'],
+		shonandai_west: ['7395', '11403', '5609'],
+		shonandai_east: ['12189', '11908'],
 	};
 
-
-
-	const lastUpdatedAt = Date.now()/1000;
+	const lastUpdatedAt = Math.floor(Date.now() / 1000);
 	const ttl = 60;
 
+	const filteredData = Object.fromEntries(
+		Object.entries(stationIds).map(([key, ids]) => [
+			key,
+			ids.map((id) => convertHelloCyclingToGBFS(data[id], lastUpdatedAt)),
+		])
+	);
+
 	const responseData: ApiResponse = {
-		stations: filteredData,
+		stations: filteredData as ApiResponse['stations'],
 		lastUpdatedAt,
 		ttl,
 	};
