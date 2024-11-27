@@ -92,7 +92,12 @@ async function handleHelloCycling(
 		stationInfoData.last_updated,
 		stationStatusData.last_updated
 	);
-	const ttl = Math.min(stationStatusData.ttl, stationInfoData.ttl);
+
+	// calculate the minimum ttl
+	// calculate in seconds precision
+	const now = Date.now() / 1000;
+	const expiry = Math.min(stationInfoData.last_updated + stationInfoData.ttl, stationStatusData.last_updated + stationStatusData.ttl);
+	const ttl = Math.max(0, expiry - now);
 
 	const responseData: ApiResponse = {
 		stations: filteredData,
