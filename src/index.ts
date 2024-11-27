@@ -65,7 +65,7 @@ async function handleHelloCycling(
 	const response = new Response(JSON.stringify(responseData), {
 		headers: {
 			'Content-Type': 'application/json',
-			'Cache-Control': `max-age=${ttl}`,
+			'Cache-Control': `s-maxage=${ttl}`,
 		},
 	});
 
