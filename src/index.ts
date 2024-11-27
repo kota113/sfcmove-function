@@ -10,8 +10,21 @@
  *
  * Learn more at https://developers.cloudflare.com/workers/
  */
-import { StationInfo, StationInformation, StationStatus } from '../types/gbfs';
 import { ApiResponse, StationItem } from '../types/apiRes';
+import { HelloCyclingApiStationItem } from '../types/hello-cycling';
+
+async function convertHelloCyclingToGBFS(data: HelloCyclingApiStationItem): Promise<StationItem> {
+	return {
+		name: data.name,
+		station_id: data.id,
+		num_bikes_available: data.num_bikes_now,
+		num_docks_available: data.num_bikes_parkable,
+		is_installed: data.isopen,
+		is_renting: data.isopen,
+		is_returning: data.isopen,
+		last_reported: Date.now()/1000,
+	};
+}
 
 async function handleHelloCycling(
 	request: Request,
@@ -26,78 +39,20 @@ async function handleHelloCycling(
 		return cachedResponse;
 	}
 
-	const stationIds = ['5143', '7395', '11403', '5609', '12189', '11908'];
-	const stationIdsSet = new Set(stationIds);
-
-	// Fetch both resources in parallel
-	const [stationInfoRes, stationStatusRes] = await Promise.all([
-		fetch(
-			'https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_information.json'
-		),
-		fetch(
-			'https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_status.json'
-		),
-	]);
-
-	if (!stationInfoRes.ok || !stationStatusRes.ok) {
-		return new Response('Failed to fetch data from origin', { status: 502 });
-	}
-
-	// Parse JSON responses in parallel
-	// noinspection ES6MissingAwait
-	const [stationInfoData, stationStatusData] = await Promise.all([
-		stationInfoRes.json() as Promise<StationInformation>,
-		stationStatusRes.json() as Promise<StationStatus>,
-	]);
-
-	// Create a map of station_id to StationInfo
-	const stationInfoMap = new Map<string, StationInfo>();
-	for (const station of stationInfoData.data.stations) {
-		if (stationIdsSet.has(station.station_id)) {
-			stationInfoMap.set(station.station_id, station);
-		}
-	}
-
-	// Filter and process station statuses
-	const filteredStationStatus: Record<string, StationItem> = {};
-	for (const station of stationStatusData.data.stations) {
-		if (stationIdsSet.has(station.station_id)) {
-			const stationInfo = stationInfoMap.get(station.station_id);
-			if (stationInfo) {
-				filteredStationStatus[station.station_id] = {
-					...station,
-					name: stationInfo.name,
-					num_docks_available: Math.max(0, station.num_docks_available || 0),
-					num_bikes_available: Math.max(0, station.num_bikes_available || 0),
-				};
-			}
-		}
-	}
-
-	// Group stations into categories
+	const res = await fetch('https://www.hellocycling.jp/app/top/port_json?data=data', {
+		method: 'GET'
+	});
+	const data = await res.json() as Record<string, HelloCyclingApiStationItem>;
 	const filteredData = {
-		sfc: [filteredStationStatus['5143']],
-		shonandai_west: [
-			filteredStationStatus['7395'],
-			filteredStationStatus['11403'],
-			filteredStationStatus['5609'],
-		],
-		shonandai_east: [
-			filteredStationStatus['12189'],
-			filteredStationStatus['11908'],
-		],
+		'sfc': await Promise.all([data['5143']].map(convertHelloCyclingToGBFS)),
+		'shonandai_west': await Promise.all([data['7395'], data['11403'], data['5609']].map(convertHelloCyclingToGBFS)),
+		'shonandai_east': await Promise.all([data['12189'], data['11908']].map(convertHelloCyclingToGBFS))
 	};
 
-	const lastUpdatedAt = Math.max(
-		stationInfoData.last_updated,
-		stationStatusData.last_updated
-	);
 
-	// calculate the minimum ttl
-	// calculate in seconds precision
-	const now = Date.now() / 1000;
-	const expiry = Math.min(stationInfoData.last_updated + stationInfoData.ttl, stationStatusData.last_updated + stationStatusData.ttl);
-	const ttl = Math.max(0, expiry - now);
+
+	const lastUpdatedAt = Date.now()/1000;
+	const ttl = 60;
 
 	const responseData: ApiResponse = {
 		stations: filteredData,
