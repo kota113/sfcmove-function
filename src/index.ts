@@ -9,7 +9,7 @@ function convertHelloCyclingToGBFS(
 	return {
 		name: data.name,
 		station_id: data.id,
-		num_bikes_available: data.num_bikes_now,
+		num_bikes_available: data.num_bikes_rentalable,
 		num_docks_available: data.num_bikes_parkable,
 		is_installed: data.isopen,
 		is_renting: data.isopen,
