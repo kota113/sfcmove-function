@@ -45,7 +45,7 @@ async function handleHelloCycling(
 
 	const stationIds = {
 		sfc: ['5143'],
-		shonandai_west: ['7395', '11403', '5609'],
+		shonandai_west: ['7395', '11403', '5609', '16084'],
 		shonandai_east: ['12189', '11908'],
 	};
 
